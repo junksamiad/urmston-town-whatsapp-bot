@@ -1,0 +1,9 @@
+# Python files
+__pycache__/
+*.py[cod]
+src/cdk/.venv/
+cdk.out/
+AWS setup.txt
+create_repo.sh
+.env
+src/lambda/.venv/
