@@ -1,12 +1,24 @@
 import json
 import uuid
 import os
+import sys
+import logging
 from unittest.mock import patch, MagicMock
 from dotenv import load_dotenv
-from app import handle_trigger, handle_webhook, send_whatsapp_template, send_whatsapp_message
+
+# Add the src/lambda directory to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src/lambda')))
+
+from app import lambda_handler, handle_trigger, handle_webhook, send_whatsapp_template, send_whatsapp_message
 
 # Load environment variables
 load_dotenv()
+
+# Configure logging to include request_id
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s - request_id: %(request_id)s'
+)
 
 class TwilioMock:
     """Mock class for Twilio client to avoid sending actual messages during testing"""
@@ -56,12 +68,15 @@ def run_test(test_name, event, mock_config=None, expected_status=200):
     # Generate a request ID
     request_id = str(uuid.uuid4())
     
+    # Create a mock context object for lambda_handler
+    mock_context = MagicMock()
+    mock_context.aws_request_id = request_id
+    
     # Run the test with the mock
     with patch('app.twilio_client', twilio_mock.setup_mock()):
-        if "webhook" in test_name.lower():
-            response = handle_webhook(event, request_id)
-        else:
-            response = handle_trigger(event, request_id)
+        # Call lambda_handler instead of handle_trigger or handle_webhook directly
+        # This ensures API key validation is tested
+        response = lambda_handler(event, mock_context)
     
     # Print the response
     print(f"Response status code: {response['statusCode']}")
@@ -86,7 +101,7 @@ def run_test(test_name, event, mock_config=None, expected_status=200):
                     print("  Variables: None (would use fallback values)")
     
     print(f"✅ Test passed: {test_name}")
-    return True
+    return response
 
 def create_test_event(payload=None, headers=None, path="/trigger"):
     """Create a test event with the given payload and headers"""
@@ -111,8 +126,13 @@ def create_test_event(payload=None, headers=None, path="/trigger"):
             "x-api-key": os.environ.get("API_KEY", "test-api-key")
         }
     
+    # Create an event that mimics the API Gateway v2 format
     return {
-        "path": path,
+        "requestContext": {
+            "http": {
+                "path": path
+            }
+        },
         "headers": headers,
         "body": json.dumps(payload)
     } 
