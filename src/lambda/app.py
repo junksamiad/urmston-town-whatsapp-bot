@@ -5,11 +5,6 @@ import os
 import uuid
 import boto3
 from datetime import datetime
-from twilio.rest import Client
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
 
 # Configure logging
 logger = logging.getLogger()
@@ -18,102 +13,61 @@ logger.setLevel(logging.INFO)
 # Initialize AWS clients
 sqs_client = boto3.client('sqs')
 WEBHOOK_QUEUE_URL = os.environ.get('WEBHOOK_QUEUE_URL')
+ssm_client = boto3.client('ssm')
 
 # API key for /trigger endpoint
 VALID_API_KEY = os.environ.get('API_KEY', 'YOUR_API_KEY_HERE')
 
-# Twilio credentials from environment variables
-TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID')
-TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN')
-TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER')
-TWILIO_TEMPLATE_SID = os.environ.get('TWILIO_TEMPLATE_SID', 'HXbae39f90eb98c2550ec550a2b5f4d2a1')
+# Function to get parameter from SSM if it starts with a slash
+def get_parameter_value(param_name, default_value=None):
+    param_value = os.environ.get(param_name, default_value)
+    
+    # If the parameter value starts with a slash, it's an SSM parameter path
+    if param_value and param_value.startswith('/'):
+        try:
+            response = ssm_client.get_parameter(Name=param_value)
+            return response['Parameter']['Value']
+        except Exception as e:
+            logger.error(f"Error retrieving parameter {param_name} from SSM: {str(e)}")
+            return default_value
+    
+    return param_value
 
-# Initialize Twilio client if credentials are available
-twilio_client = None
-if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
-    twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+# Twilio credentials from environment variables or SSM
+TWILIO_ACCOUNT_SID = get_parameter_value('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = get_parameter_value('TWILIO_AUTH_TOKEN')
+TWILIO_PHONE_NUMBER = get_parameter_value('TWILIO_PHONE_NUMBER')
+TWILIO_TEMPLATE_SID = get_parameter_value('TWILIO_TEMPLATE_SID')
 
+# Lambda handler function
 def lambda_handler(event, context):
-    """
-    Lambda function that handles both trigger and webhook routes
-    for the football registration WhatsApp bot.
-    """
-    # Generate request ID for tracking
+    """Main Lambda handler function"""
+    # Generate a unique request ID for tracking
     request_id = str(uuid.uuid4())
     
-    # Add request ID to logger context
-    logger_context = {'request_id': request_id}
+    # Log the incoming event
+    logger.info(f"Received event: {json.dumps(event)}")
     
-    try:
-        # Log the entire event for debugging
-        logger.info(f"Received event: {json.dumps(event)}", extra=logger_context)
-        
-        # Check if this is an SQS event (batch processing)
-        if 'Records' in event and event.get('Records', []) and 'eventSource' in event['Records'][0] and event['Records'][0]['eventSource'] == 'aws:sqs':
-            return process_sqs_messages(event, context, request_id)
-        
-        # Determine which route was called
-        # Check for API Gateway v2 format first
-        if 'requestContext' in event and 'http' in event['requestContext']:
-            path = event['requestContext']['http']['path']
-        elif 'rawPath' in event:
-            path = event['rawPath']
-        else:
-            # Fall back to the original path extraction
-            path = event.get('path', '')
-            
-        logger.info(f"Path: {path}", extra=logger_context)
-        
-        if '/trigger' in path:
-            # Validate API key for /trigger endpoint
-            api_key = None
-            
-            # Extract API key from headers
-            if 'headers' in event:
-                headers = event['headers']
-                api_key = headers.get('x-api-key') or headers.get('X-Api-Key')
-            
-            # Check if API key is valid
-            if api_key != VALID_API_KEY:
-                logger.warning(f"Invalid or missing API key: {api_key}", extra=logger_context)
-                return {
-                    'statusCode': 403,
-                    'body': json.dumps({
-                        'message': 'Forbidden: Invalid or missing API key',
-                        'request_id': request_id
-                    })
-                }
-            
-            # Process trigger requests synchronously (direct Lambda invocation)
-            return handle_trigger(event, request_id)
-        elif '/webhook' in path:
-            # For webhook, process directly if SQS queue URL is not available
-            if not WEBHOOK_QUEUE_URL:
-                logger.warning("SQS queue URL not available, processing webhook directly", extra=logger_context)
-                return handle_webhook(event, request_id)
-            else:
-                # Send to SQS and return immediate response
-                return queue_webhook_message(event, request_id)
-        else:
-            logger.error(f"Route not found for path: {path}", extra=logger_context)
-            return {
-                'statusCode': 404,
-                'body': json.dumps({
-                    'message': 'Route not found',
-                    'request_id': request_id
-                })
-            }
-            
-    except Exception as e:
-        logger.error(f"Error processing request: {str(e)}", extra=logger_context)
-        return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'message': 'Error processing request',
-                'error': str(e),
-                'request_id': request_id
-            })
-        }
+    # Return environment variables and SSM values
+    return {
+        'statusCode': 200,
+        'body': json.dumps({
+            'environment_variables': {
+                'TWILIO_ACCOUNT_SID': os.environ.get('TWILIO_ACCOUNT_SID'),
+                'TWILIO_AUTH_TOKEN': os.environ.get('TWILIO_AUTH_TOKEN'),
+                'TWILIO_PHONE_NUMBER': os.environ.get('TWILIO_PHONE_NUMBER'),
+                'TWILIO_TEMPLATE_SID': os.environ.get('TWILIO_TEMPLATE_SID')
+            },
+            'ssm_values': {
+                'TWILIO_ACCOUNT_SID': TWILIO_ACCOUNT_SID,
+                'TWILIO_AUTH_TOKEN': TWILIO_AUTH_TOKEN,
+                'TWILIO_PHONE_NUMBER': TWILIO_PHONE_NUMBER,
+                'TWILIO_TEMPLATE_SID': TWILIO_TEMPLATE_SID
+            },
+            'request_id': request_id,
+            'event': event
+        })
+    }
 
 def handle_trigger(event, request_id):
     """Handle the trigger route for initiating registration"""
@@ -351,10 +305,6 @@ def send_whatsapp_template(to_number, template_variables, request_id):
     logger_context = {'request_id': request_id}
     
     try:
-        if not twilio_client:
-            logger.warning("Twilio client not initialized. Check environment variables.", extra=logger_context)
-            return "twilio_client_not_initialized"
-        
         # Log the template SID being used
         logger.info(f"Using template SID: {TWILIO_TEMPLATE_SID}", extra=logger_context)
         

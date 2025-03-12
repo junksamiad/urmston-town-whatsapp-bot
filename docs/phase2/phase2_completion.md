@@ -1,5 +1,19 @@
 # Phase 2 Completion Report: Twilio Integration
 
+## ⚠️ IMPORTANT: DEPLOYMENT STATUS NOTE ⚠️
+
+**CURRENT STATUS: DEPLOYED BUT NOT TESTED IN AWS ENVIRONMENT**
+
+While the code has been successfully deployed to AWS and local testing has been completed, the final deployment testing in the AWS environment has **NOT** been carried out yet. A comprehensive testing plan has been created in `docs/phase2/phase2_testing_plan.md`, but the actual execution of these tests against the deployed AWS resources is pending.
+
+Anyone continuing this project should:
+1. Review the testing plan in `docs/phase2/phase2_testing_plan.md`
+2. Execute the tests against the deployed AWS resources
+3. Document the results and any issues encountered
+4. Update this document with the testing results
+
+The testing results reported in this document are from local testing only and need to be verified in the AWS environment.
+
 ## Implementation Summary
 
 We have successfully implemented all the requirements for Phase 2:
@@ -20,7 +34,9 @@ We have successfully implemented all the requirements for Phase 2:
 
 4. **CDK Stack Update**
    - Updated the CDK stack to use environment variables
-   - Configured AWS Secrets Manager for Twilio credentials
+   - Configured AWS Secrets Manager for sensitive Twilio credentials (Account SID and Auth Token)
+   - Implemented AWS SSM Parameter Store for non-sensitive configuration (phone number and template SID)
+   - Created a setup script for managing SSM parameters
 
 5. **Documentation and Diagrams**
    - Updated the registration flow diagram with Twilio integration
@@ -31,11 +47,16 @@ We have successfully implemented all the requirements for Phase 2:
    - Centralized management of environment variables
    - Improved security by keeping sensitive information out of the code
 
-7. **Comprehensive Testing**
-   - Completed all phases of the testing schedule
+7. **Comprehensive Local Testing**
+   - Completed all phases of the local testing schedule
    - Fixed issues with API key validation
    - Verified real message delivery with both template variables and fallback values
    - Successfully tested concurrent message sending
+
+8. **Version Control**
+   - All changes have been committed to the `phase2` branch in Git
+   - This branch-based development approach allows for isolated feature development
+   - Changes can be reviewed before merging into the main branch
 
 ## Implementation Details
 
@@ -95,7 +116,9 @@ The deployment process includes:
 2. Updating the Lambda function code
 3. Deploying the CDK stack with environment variables
 
-## Testing Results
+## Local Testing Results
+
+The following testing results are from **local testing only** and need to be verified in the AWS environment:
 
 ### Phase 1: Mock-Based Testing ✅
 - **Error Handling Tests**: Successfully tested handling of invalid phone numbers, missing required fields, service disruptions, and malformed payloads. Fixed an issue with API key validation.
@@ -119,6 +142,99 @@ The deployment process includes:
     - Maximum response time: 0.4058 seconds
     - Minimum response time: 0.4031 seconds
   - All messages were received by the recipients, confirming the system's ability to handle multiple simultaneous requests.
+
+## AWS Deployment Status
+
+As of the latest deployment attempt, we have the following status:
+
+1. **Lambda Function Update**: ✅ COMPLETED
+   - Successfully packaged the Lambda function code into a zip file
+   - Successfully updated the Lambda function code using the AWS CLI
+   - The Lambda function is now running with the latest code that includes Twilio integration
+
+2. **SSM Parameters**: ✅ COMPLETED
+   - Successfully created the SSM parameters for Twilio configuration:
+     - `/urmston/twilio/phone-number` with value `whatsapp:+447700148000`
+     - `/urmston/twilio/template-sid` with value `HX7d785aa7b15519a858cfc7f0d485ff2c`
+
+3. **AWS Secrets Manager**: ✅ COMPLETED
+   - Created the necessary secrets in AWS Secrets Manager:
+     - `urmston/twilio/account-sid` with the Twilio Account SID
+     - `urmston/twilio/auth-token` with the Twilio Auth Token
+   - Resolved permissions issues by creating a SecretsManagerAccess policy in the IAM dashboard
+
+4. **CDK Deployment**: ✅ COMPLETED
+   - ✅ FIXED: Bootstrap issues have been resolved by:
+     - Deleting the existing CDKToolkit stack that was in ROLLBACK_COMPLETE status
+     - Removing the S3 bucket that was causing conflicts
+     - Successfully bootstrapping a fresh CDK environment
+   - ✅ FIXED: Lambda concurrency issues resolved by removing the reserved concurrency setting
+   - Successfully deployed the CDK stack with all resources
+
+5. **AWS Deployment Testing**: ⚠️ NOT COMPLETED
+   - A comprehensive testing plan has been created in `docs/phase2/phase2_testing_plan.md`
+   - The tests have not been executed against the deployed AWS resources
+   - This testing is required to verify that the deployment is working correctly in the AWS environment
+
+### Deployment Resources
+
+1. **API Gateway Endpoint**: `https://2q6z7thwxa.execute-api.eu-north-1.amazonaws.com/prod/`
+   - Trigger endpoint: `https://2q6z7thwxa.execute-api.eu-north-1.amazonaws.com/prod/trigger`
+   - Webhook endpoint: `https://2q6z7thwxa.execute-api.eu-north-1.amazonaws.com/prod/webhook`
+
+2. **API Key**: `3XBis5FzF78FyVlPqqdzDupXZJ5c0lU59n9gTY2d`
+   - Name: `UrmstonTownRegistrationKey`
+   - Use this key in the `x-api-key` header for all requests to the trigger endpoint
+
+3. **Usage Plan**: `TriggerEndpointPlan`
+   - Rate limit: 25 requests per second
+   - Burst limit: 50 requests
+
+### Deployment Issues Encountered
+
+1. **CDK Bootstrap Issues**: ✅ RESOLVED
+   - The S3 bucket `cdk-hnb659fds-assets-650251723700-eu-north-1` already existed
+   - The bootstrap process was failing with `ROLLBACK_COMPLETE` status
+   - We successfully deleted the stack, removed the bucket, and bootstrapped again
+
+2. **AWS CLI Hanging**: ✅ RESOLVED
+   - Some AWS CLI commands were hanging or taking a long time to complete
+   - The Lambda function update command completed successfully
+   - The SSM parameter listing command completed successfully
+
+3. **IAM Permissions**: ✅ RESOLVED
+   - There were permission issues with the IAM user being used
+   - Created a SecretsManagerAccess policy in the IAM dashboard under the admin user
+   - Now able to create and access secrets in AWS Secrets Manager
+
+4. **API Gateway Resources**: ✅ RESOLVED
+   - The API key "UrmstonTownRegistrationKey" already existed
+   - The usage plan "TriggerEndpointPlan" already existed
+   - We deleted these resources to allow the CDK deployment to create them fresh
+
+5. **Lambda Concurrency**: ✅ RESOLVED
+   - The CDK stack was trying to set a reserved concurrency that was too low for the AWS account limits
+   - Removed the `reserved_concurrent_executions=30` parameter from the Lambda function definition
+   - Deployment succeeded without the concurrency setting
+
+### Pending AWS Testing
+
+To test the deployed application, use the following command:
+
+```bash
+curl -X POST https://2q6z7thwxa.execute-api.eu-north-1.amazonaws.com/prod/trigger \
+-H "Content-Type: application/json" \
+-H "x-api-key: 3XBis5FzF78FyVlPqqdzDupXZJ5c0lU59n9gTY2d" \
+-d @testing/payloads/test_payload.json
+```
+
+The comprehensive testing plan in `docs/phase2/phase2_testing_plan.md` includes:
+1. Basic functionality tests for the trigger endpoint
+2. Authentication and security tests for API key validation
+3. Error handling tests for missing fields and invalid phone numbers
+4. Performance and concurrency tests
+
+**⚠️ IMPORTANT: These tests need to be executed before considering Phase 2 complete.**
 
 ## Key Learnings
 
@@ -164,7 +280,15 @@ During testing, we identified and fixed several issues:
 
 ## Next Steps
 
-After completing Phase 2, we're ready to proceed to Phase 3 (OpenAI Integration) with a functional WhatsApp messaging system. The Twilio integration implemented in this phase will enable the conversational registration process in future phases.
+1. **Complete AWS Deployment Testing**:
+   - Execute the tests in `docs/phase2/phase2_testing_plan.md` against the deployed AWS resources
+   - Document the results and any issues encountered
+   - Update this document with the testing results
+
+2. **Proceed to Phase 3 (OpenAI Integration)**:
+   - After confirming the AWS deployment is working correctly
+   - Build on the functional WhatsApp messaging system implemented in Phase 2
+   - Implement the conversational registration process
 
 ## Technical Notes for Future Reference
 
@@ -176,6 +300,6 @@ After completing Phase 2, we're ready to proceed to Phase 3 (OpenAI Integration)
 
 4. **Error Handling**: The Lambda function includes error handling for Twilio API calls, but additional monitoring and alerting should be implemented in the production environment.
 
-5. **Testing**: The comprehensive testing framework provides a solid foundation for ongoing testing and maintenance. All three phases of testing have been successfully completed, verifying the system's robustness, performance, and reliability.
+5. **Testing**: The comprehensive testing framework provides a solid foundation for ongoing testing and maintenance. All three phases of local testing have been successfully completed, but AWS deployment testing is still pending.
 
 6. **Template Variables**: The system supports both fallback values and explicit template variables, giving flexibility in how messages are personalized. 

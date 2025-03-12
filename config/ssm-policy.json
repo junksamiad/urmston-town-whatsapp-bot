@@ -1,0 +1,1 @@
+{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["ssm:GetParameter"],"Resource":["arn:aws:ssm:eu-north-1:650251723700:parameter/urmston/twilio/phone-number","arn:aws:ssm:eu-north-1:650251723700:parameter/urmston/twilio/template-sid"]}]}

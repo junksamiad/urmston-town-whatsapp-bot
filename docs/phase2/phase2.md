@@ -2,6 +2,18 @@
 
 A step-by-step guide to implementing Twilio integration for our WhatsApp chatbot.
 
+## IMPORTANT: DEPLOYMENT STATUS NOTE
+
+**⚠️ CURRENT STATUS: DEPLOYED BUT NOT TESTED ⚠️**
+
+While the code has been successfully deployed to AWS, the final deployment testing in the AWS environment has **NOT** been carried out yet. A comprehensive testing plan has been created in `docs/phase2/phase2_testing_plan.md`, but the actual execution of these tests against the deployed AWS resources is pending.
+
+Anyone continuing this project should:
+1. Review the testing plan in `docs/phase2/phase2_testing_plan.md`
+2. Execute the tests against the deployed AWS resources
+3. Document the results and any issues encountered
+4. Update this document and `docs/phase2/phase2_completion.md` with the testing results
+
 ## Directory Structure Note
 
 **Important:** The project is organized with the following directory layout:
@@ -517,16 +529,39 @@ git add .
 # Commit with a descriptive message
 git commit -m "Phase 2: Implement Twilio WhatsApp template messaging"
 
-# Push to remote repository
-git push origin main
+# Push to remote repository (phase2 branch)
+git push origin phase2
 ```
 
+**Note**: For this project, we're using the `phase2` branch for development, not the `main` branch as originally specified. This allows us to keep the development work isolated until it's ready to be merged into the main branch.
+
 ### 8. Update CDK Stack with Environment Variables (AWS Deployment)
-- [ ] Update the CDK stack to use environment variables and AWS Secrets Manager for production:
+- [x] Update the CDK stack to use environment variables and AWS Secrets Manager for production:
   ```python
   # Update src/cdk/cdk_stack.py
   
-  # For local development and testing, use environment variables
+  # Import the required modules
+  from aws_cdk import (
+      # ... other imports ...
+      aws_secretsmanager as secretsmanager,
+      aws_ssm as ssm,
+  )
+  
+  # In the CdkStack class __init__ method:
+  
+  # Get configuration from SSM Parameter Store for non-sensitive values
+  twilio_phone_number = ssm.StringParameter.from_string_parameter_name(
+      self, "TwilioPhoneNumber",
+      string_parameter_name="/urmston/twilio/phone-number"
+  ).string_value
+  
+  twilio_template_sid = ssm.StringParameter.from_string_parameter_name(
+      self, "TwilioTemplateSid",
+      string_parameter_name="/urmston/twilio/template-sid"
+  ).string_value
+  
+  # For the Lambda function definition, use Secrets Manager for sensitive credentials
+  # and SSM Parameter Store for non-sensitive configuration
   registration_lambda = _lambda.Function(
       self, "RegistrationHandler",
       runtime=_lambda.Runtime.PYTHON_3_9,
@@ -542,11 +577,54 @@ git push origin main
           "TWILIO_AUTH_TOKEN": secretsmanager.Secret.from_secret_name_v2(
               self, "TwilioAuthToken", "urmston/twilio/auth-token"
           ).secret_value.to_string(),
-          "TWILIO_PHONE_NUMBER": "whatsapp:+447700148000",
-          "TWILIO_TEMPLATE_SID": "HXbd20683c439d5894ded688d2a667a02c"
+          "TWILIO_PHONE_NUMBER": twilio_phone_number,
+          "TWILIO_TEMPLATE_SID": twilio_template_sid
       }
   )
   ```
+
+- [x] Create a script to set up the SSM parameters:
+  ```bash
+  # Create src/cdk/setup_parameters.sh
+  #!/bin/bash
+  # Script to set up SSM parameters for Twilio configuration
+  
+  # Set the AWS region
+  REGION="eu-north-1"
+  
+  # Set the parameter values (these should be replaced with actual values)
+  TWILIO_PHONE_NUMBER="whatsapp:+447700148000"
+  TWILIO_TEMPLATE_SID="HX7d785aa7b15519a858cfc7f0d485ff2c"
+  
+  # Create or update the parameters
+  echo "Creating/updating SSM parameters..."
+  
+  # Twilio Phone Number
+  aws ssm put-parameter \
+      --name "/urmston/twilio/phone-number" \
+      --value "$TWILIO_PHONE_NUMBER" \
+      --type "String" \
+      --description "Twilio WhatsApp phone number for Urmston Town Registration bot" \
+      --overwrite \
+      --region $REGION
+  
+  # Twilio Template SID
+  aws ssm put-parameter \
+      --name "/urmston/twilio/template-sid" \
+      --value "$TWILIO_TEMPLATE_SID" \
+      --type "String" \
+      --description "Twilio WhatsApp template SID for Urmston Town Registration bot" \
+      --overwrite \
+      --region $REGION
+  ```
+
+- [x] Make the script executable and run it:
+  ```bash
+  chmod +x src/cdk/setup_parameters.sh
+  ./src/cdk/setup_parameters.sh
+  ```
+
+**Note**: Using SSM Parameter Store for non-sensitive configuration values (like the Twilio phone number and template SID) makes the application more modular and reusable. Different businesses can use different WhatsApp numbers and templates without code changes, simply by updating the parameters in SSM.
 
 ### 9. Deploy to AWS
 - [ ] Deploy the updated Lambda function to AWS:
@@ -651,51 +729,57 @@ After completing Phase 2, we'll move on to Phase 3 where we'll implement advance
 4. Setting up monitoring and alerting
 5. Implementing error handling and validation 
 
-## Implementation Learnings
+## Deployment Status
 
-### Environment Variables Management
-During the implementation of Phase 2, we discovered the importance of proper environment variable management:
+The Phase 2 implementation has been deployed to AWS, but **final testing in the AWS environment has not been completed**. Here's a summary of the deployment:
 
-1. **Using python-dotenv**: We implemented python-dotenv to load environment variables from the .env file, which provides a more consistent environment between local development and production.
-   ```python
-   from dotenv import load_dotenv
-   
-   # Load environment variables from .env file
-   load_dotenv()
-   
-   # Now environment variables are available via os.environ.get()
-   TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID')
-   ```
+### Deployment Resources
 
-2. **Before vs. After**:
-   - Before: Relying on manually setting environment variables in code or expecting them to be set in the system environment
-   - After: Automatically loading environment variables from the .env file, ensuring consistency across all parts of the application
+1. **API Gateway Endpoint**: `https://2q6z7thwxa.execute-api.eu-north-1.amazonaws.com/prod/`
+   - Trigger endpoint: `https://2q6z7thwxa.execute-api.eu-north-1.amazonaws.com/prod/trigger`
+   - Webhook endpoint: `https://2q6z7thwxa.execute-api.eu-north-1.amazonaws.com/prod/webhook`
 
-3. **Benefits**:
-   - Centralized management of environment variables
-   - Consistent environment between local development and production
-   - Easier to update and maintain
-   - Better security by keeping sensitive information out of the code
+2. **API Key**: `3XBis5FzF78FyVlPqqdzDupXZJ5c0lU59n9gTY2d`
+   - Name: `UrmstonTownRegistrationKey`
+   - Use this key in the `x-api-key` header for all requests to the trigger endpoint
 
-### Twilio Template Behavior
-We also learned important details about how Twilio templates work:
+3. **Usage Plan**: `TriggerEndpointPlan`
+   - Rate limit: 25 requests per second
+   - Burst limit: 50 requests
 
-1. **Fallback Values**: If no content variables are provided when sending a template message, Twilio will use the fallback values configured in the template settings.
-   ```python
-   # This works without providing content_variables
-   message = twilio_client.messages.create(
-       content_sid=TWILIO_TEMPLATE_SID,
-       from_=TWILIO_PHONE_NUMBER,
-       to=f"whatsapp:{to_number}"
-   )
-   ```
+4. **Environment Variables**:
+   - SSM Parameters:
+     - `/urmston/twilio/phone-number`: `whatsapp:+447700148000`
+     - `/urmston/twilio/template-sid`: `HX7d785aa7b15519a858cfc7f0d485ff2c`
+   - AWS Secrets Manager:
+     - `urmston/twilio/account-sid`: Twilio Account SID
+     - `urmston/twilio/auth-token`: Twilio Auth Token
 
-2. **Template Configuration**: The template variables and their fallback values are configured in the Twilio console, not in the code.
+### Testing the Deployment
 
-3. **Simplified Code**: This behavior allows us to simplify our code by not having to provide template variables for every message, relying instead on the fallback values configured in Twilio.
+A comprehensive testing plan has been created in `docs/phase2/phase2_testing_plan.md` but has not yet been executed. The plan includes:
 
-4. **Template Testing**: We tested multiple templates (HXbae39f90eb98c2550ec550a2b5f4d2a1, HX92dfb1c8c066dde33e564f4874af98bf, HXa44ff8fbd23dd3424bf149ba52076ff2, HXbd20683c439d5894ded688d2a667a02c) and confirmed they all work with fallback values.
+1. Basic functionality tests for the trigger endpoint
+2. Authentication and security tests for API key validation
+3. Error handling tests for missing fields and invalid phone numbers
+4. Performance and concurrency tests
 
-5. **Numbered Variables**: We discovered that Twilio templates use numbered variables (1-9) instead of named variables, which required us to update our template variables format.
+**⚠️ IMPORTANT: These tests need to be executed before considering Phase 2 complete.**
 
-These learnings have helped us create a more robust and maintainable implementation for the WhatsApp chatbot. 
+You can test the deployment with this command:
+
+```bash
+curl -X POST https://2q6z7thwxa.execute-api.eu-north-1.amazonaws.com/prod/trigger \
+-H "Content-Type: application/json" \
+-H "x-api-key: 3XBis5FzF78FyVlPqqdzDupXZJ5c0lU59n9gTY2d" \
+-d @testing/payloads/test_payload.json
+```
+
+### Deployment Challenges Resolved
+
+1. **CDK Bootstrap Issues**: Fixed by deleting the existing bootstrap stack and creating a fresh one
+2. **AWS Secrets Manager Access**: Resolved by creating a SecretsManagerAccess policy in IAM
+3. **API Gateway Resource Conflicts**: Resolved by deleting existing resources and recreating them
+4. **Lambda Concurrency Limits**: Fixed by removing the reserved concurrency setting
+
+For a detailed deployment report, see `docs/phase2/phase2_completion.md`. 

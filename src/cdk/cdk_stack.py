@@ -10,6 +10,7 @@ from aws_cdk import (
     aws_lambda_event_sources as lambda_event_sources,
     aws_cloudwatch as cloudwatch,
     aws_secretsmanager as secretsmanager,
+    aws_ssm as ssm,
 )
 from constructs import Construct
 
@@ -23,6 +24,17 @@ class CdkStack(Stack):
             visibility_timeout=Duration.seconds(300),  # 5 minutes
             retention_period=Duration.days(1)
         )
+        
+        # Get configuration from SSM Parameter Store
+        twilio_phone_number = ssm.StringParameter.from_string_parameter_name(
+            self, "TwilioPhoneNumber",
+            string_parameter_name="/urmston/twilio/phone-number"
+        ).string_value
+        
+        twilio_template_sid = ssm.StringParameter.from_string_parameter_name(
+            self, "TwilioTemplateSid",
+            string_parameter_name="/urmston/twilio/template-sid"
+        ).string_value
         
         # Create Lambda function
         registration_lambda = _lambda.Function(
@@ -41,10 +53,9 @@ class CdkStack(Stack):
                 "TWILIO_AUTH_TOKEN": secretsmanager.Secret.from_secret_name_v2(
                     self, "TwilioAuthToken", "urmston/twilio/auth-token"
                 ).secret_value.to_string(),
-                "TWILIO_PHONE_NUMBER": "whatsapp:+447700148000",
-                "TWILIO_TEMPLATE_SID": "HX7d785aa7b15519a858cfc7f0d485ff2c"
-            },
-            reserved_concurrent_executions=30  # Set reserved concurrency to 30
+                "TWILIO_PHONE_NUMBER": twilio_phone_number,
+                "TWILIO_TEMPLATE_SID": twilio_template_sid
+            }
         )
         
         # Grant Lambda permission to send messages to SQS
